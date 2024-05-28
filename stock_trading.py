@@ -109,7 +109,7 @@ class MultiStockEnv:
 
     def __init__(self, data, initial_investment=20000):
         self.stock_price_history = data
-        self.n_steps, self.n_stocks = data.shape()
+        self.n_steps, self.n_stocks = data.shape
 
         self.investment = initial_investment
         self.cur_step = None
@@ -182,7 +182,7 @@ class MultiStockEnv:
 
         if sell_idx:
             for i in sell_idx:
-                self.cash_in_hand = +self.stock_price[i] * self.n_stocks[i]
+                self.cash_in_hand += self.stock_price[i] * self.stocks_owned[i]
                 self.stocks_owned[i] = 0
         if buy_idx:
             flag = True
@@ -232,91 +232,85 @@ class DQNAgent(object):
 
         target_in_full[np.arange(batch_size), actions] = target  #setting the targets for the batch we just went through
 
-        self.model.train_on_batch(states,target_in_full)  #training
+        self.model.train_on_batch(states, target_in_full)  #training
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-    def load(self,name):
+    def load(self, name):
         self.model.load_weights(name)
 
-    def save(self,name):
+    def save(self, name):
         self.model.save_weights(name)
 
-def play_one_episode(agent, env, is_train):
 
+def play_one_episode(agent, env, is_train):
     state = env.reset()
 
-    state = scaler.transform(state)
-    done=False
+    state = scaler.transform([state])
+    done = False
 
     while not done:
         action = agent.act(state)
-        next_state, reward,done, info = env.step(action)
-        next_state = scaler.transform(next_state)
+        next_state, reward, done, info = env.step(action)
+        next_state = scaler.transform([next_state])
         if is_train == 'train':
-            agent.update_replay_memory(state,action,reward,next_state,done) #add to the buffer
-            agent.replay(batch_size) #one step of gradient descent
+            agent.update_replay_memory(state, action, reward, next_state, done)  #add to the buffer
+            agent.replay(batch_size)  #one step of gradient descent
         state = next_state
 
     return info['cur_val']
 
-if __name__ == 'main':
+
+if __name__ == '__main__':
     #conifg
     models_folder = 'rl_trader_models'
     rewards_folder = 'rl_trader_rewards'
     initial_investment = 20000
-    batch_size  = 32
-    n_eps= 2000
+    batch_size = 32
+    n_eps = 2000
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--mode', type=str,required=True,help='either "train" or "test')
+    parser.add_argument('-m', '--mode', type=str, required=True, help='either "train" or "test')
 
     args = parser.parse_args()
     maybe_make_dir(models_folder)
     maybe_make_dir(rewards_folder)
 
-    data= get_data()
+    data = get_data()
     n_timesteps, n_stocks = data.shape
 
     n_train = n_timesteps // 2
     train_data = data[:n_train]
-    test_data =  data[n_train:]
+    test_data = data[n_train:]
 
-    env = MultiStockEnv(train_data,initial_investment)
-    state_size =  env.state_dim
-    action_size= env.action_space
-    agent = DQNAgent(state_size,action_size)
+    env = MultiStockEnv(train_data, initial_investment)
+    state_size = env.state_dim
+    action_size = len(env.action_space)
+    agent = DQNAgent(state_size, action_size)
     scaler = get_scalar(env)
 
     portfolio_value = []
 
     if args.mode == 'test':
-        with open(f'{models_folder}/scaler.pkl','rb') as f:
-            scaler=pickle.load(f)
+        with open(f'{models_folder}/scaler.pkl', 'rb') as f:
+            scaler = pickle.load(f)
 
-        env= MultiStockEnv(test_data,initial_investment)
+        env = MultiStockEnv(test_data, initial_investment)
 
-        agent.epsilon=0.01
+        agent.epsilon = 0.01
         agent.load(f'{models_folder}/dqn.h5')
 
     for e in range(n_eps):
-        t0= datetime.now()
-        val = play_one_episode(agent,env.args.mode)
-        dt = datetime.now()  - t0
-        print(f'episode: {e+1}/{n_eps}, episode end value: {val: .2f}, duration: {dt}')
+        t0 = datetime.now()
+        val = play_one_episode(agent, env, args.mode)
+        dt = datetime.now() - t0
+        print(f'episode: {e + 1}/{n_eps}, episode end value: {val: .2f}, duration: {dt}')
         portfolio_value.append(val)
     if args.mode == 'train':
         agent.save(f'{models_folder}/dqn.h5')
 
-        with open(f'{models_folder}/scaler.pkl','wb') as f:
-            pickle.dump(scaler,f)
+        with open(f'{models_folder}/scaler.pkl', 'wb') as f:
+            pickle.dump(scaler, f)
 
-    np.save(f'{rewards_folder}/{args.mode}.npy',portfolio_value)
-
-
-
-
-
-
-
+    np.save(f'rl_trader_rewards/{args.mode}.npy', portfolio_value)
