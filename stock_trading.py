@@ -109,7 +109,7 @@ class MultiStockEnv:
 
     def __init__(self, data, initial_investment=20000):
         self.stock_price_history = data
-        self.n_steps, self.n_stocks = data.shape
+        self.n_steps, self.n_stocks = self.stock_price_history.shape
 
         self.investment = initial_investment
         self.cur_step = None
@@ -146,7 +146,7 @@ class MultiStockEnv:
         assert action in self.action_space
 
         prev_val = self._get_val()
-        self.cur_step = +1
+        self.cur_step += 1
         self.stock_price = self.stock_price_history[self.cur_step]
 
         self.trade(action)
@@ -162,7 +162,7 @@ class MultiStockEnv:
         obs = np.empty(self.state_dim)
         obs[:self.n_stocks] = self.stocks_owned
         obs[self.n_stocks:2 * self.n_stocks] = self.stock_price
-        obs[-1] = self.investment
+        obs[-1] = self.cash_in_hand
         return obs
 
     def _get_val(self):
@@ -210,7 +210,7 @@ class DQNAgent(object):
         self.memory.store(state, action, reward, next_state, done)
 
     def act(self, state):
-        if np.random.rand() <= self.epsilon:  #get a random number, if its less than epsilon then choose a random action other get the model prediction
+        if np.random.rand() <= self.epsilon:  # get a random number, if its less than epsilon then choose a random action other get the model prediction
             return np.random.choice(self.action_size)
         act_vals = self.model.predict(state)
         return np.argmax(act_vals[0])
@@ -225,14 +225,15 @@ class DQNAgent(object):
         actions = minibatch['action']
         reward = minibatch['reward']
         done = minibatch['done']
-        target = reward + self.gamma * np.argmax(self.model.predict(next_states), axis=1)
-        target[done] = reward[done]  #setting the target for the terminal state as its target is only reward
+        target = reward + (1-done) *self.gamma * np.argmax(self.model.predict(next_states), axis=1)
 
-        target_in_full = self.model.predict(states)  #getting all targets
 
-        target_in_full[np.arange(batch_size), actions] = target  #setting the targets for the batch we just went through
+        target_in_full = self.model.predict(states)  # getting all targets
 
-        self.model.train_on_batch(states, target_in_full)  #training
+        target_in_full[
+            np.arange(batch_size), actions] = target  # setting the targets for the batch we just went through
+
+        self.model.train_on_batch(states, target_in_full)  # training
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
@@ -246,7 +247,6 @@ class DQNAgent(object):
 
 def play_one_episode(agent, env, is_train):
     state = env.reset()
-
     state = scaler.transform([state])
     done = False
 
@@ -255,15 +255,15 @@ def play_one_episode(agent, env, is_train):
         next_state, reward, done, info = env.step(action)
         next_state = scaler.transform([next_state])
         if is_train == 'train':
-            agent.update_replay_memory(state, action, reward, next_state, done)  #add to the buffer
-            agent.replay(batch_size)  #one step of gradient descent
+            agent.update_replay_memory(state, action, reward, next_state, done)  # add to the buffer
+            agent.replay(batch_size)  # one step of gradient descent
         state = next_state
 
     return info['cur_val']
 
 
 if __name__ == '__main__':
-    #conifg
+    # conifg
     models_folder = 'rl_trader_models'
     rewards_folder = 'rl_trader_rewards'
     initial_investment = 20000
@@ -303,6 +303,7 @@ if __name__ == '__main__':
 
     for e in range(n_eps):
         t0 = datetime.now()
+        print("I am in train")
         val = play_one_episode(agent, env, args.mode)
         dt = datetime.now() - t0
         print(f'episode: {e + 1}/{n_eps}, episode end value: {val: .2f}, duration: {dt}')
